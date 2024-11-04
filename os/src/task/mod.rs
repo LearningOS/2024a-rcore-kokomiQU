@@ -25,6 +25,7 @@ pub use task::{TaskControlBlock, TaskStatus};
 
 pub use context::TaskContext;
 pub use crate::timer::get_time_ms;
+pub use crate::timer::get_time_us;
 /// The task manager, where all the tasks are managed.
 ///
 /// Functions implemented on `TaskManager` deals with all task state transitions
@@ -59,6 +60,7 @@ impl TaskManagerInner {
     fn update_checkpoint(&mut self) -> usize{
         let prev_point = self.checkpoint;
         self.checkpoint = get_time_ms();
+        
         return self.checkpoint - prev_point;
     }
 }
@@ -71,8 +73,7 @@ lazy_static! {
             task_cx: TaskContext::zero_init(),
             task_status: TaskStatus::UnInit,
             syscall_times: [0;MAX_SYSCALL_NUM],
-            user_time: 0,
-            kernel_time: 0,
+            start_time: 0,
         }; MAX_APP_NUM];
         for (i, task) in tasks.iter_mut().enumerate() {
             task.task_cx = TaskContext::goto_restore(init_app_cx(i));
@@ -102,6 +103,7 @@ impl TaskManager {
         let mut inner = self.inner.exclusive_access();
         let task0 = &mut inner.tasks[0];
         task0.task_status = TaskStatus::Running;
+        task0.start_time = get_time_ms();
         let next_task_cx_ptr = &task0.task_cx as *const TaskContext;
         inner.update_checkpoint();
         drop(inner);
@@ -118,7 +120,7 @@ impl TaskManager {
         let mut inner = self.inner.exclusive_access();
         let current = inner.current_task;
 
-        inner.tasks[current].kernel_time += inner.update_checkpoint();
+        //inner.tasks[current].kernel_time += inner.update_checkpoint();
         inner.tasks[current].task_status = TaskStatus::Ready;
     }
 
@@ -127,7 +129,7 @@ impl TaskManager {
         let mut inner = self.inner.exclusive_access();
         let current = inner.current_task;
         //println!("app {} exited", current);
-        inner.tasks[current].kernel_time += inner.update_checkpoint();
+        //inner.tasks[current].kernel_time += inner.update_checkpoint();
         //println!("task{} exit!!!,total_time  kernel/user:{}/{}",current,inner.tasks[current].kernel_time , inner.tasks[current].user_time);
         inner.tasks[current].task_status = TaskStatus::Exited;
     }
@@ -151,6 +153,9 @@ impl TaskManager {
             let current = inner.current_task;
             //println!("current: {}, next: {}", current, next);
             inner.tasks[next].task_status = TaskStatus::Running;
+            if inner.tasks[next].start_time == 0 {
+                inner.tasks[next].start_time = get_time_ms();
+            }
             inner.current_task = next;
             let current_task_cx_ptr = &mut inner.tasks[current].task_cx as *mut TaskContext;
             let next_task_cx_ptr = &inner.tasks[next].task_cx as *const TaskContext;
@@ -166,17 +171,7 @@ impl TaskManager {
     }
 
     
-    pub fn user_time_start(&self) {
-        let mut inner = self.inner.exclusive_access();
-        let current = inner.current_task;
-        inner.tasks[current].kernel_time += inner.update_checkpoint();
-    }
-
-    pub fn user_time_end(&self) {
-        let mut inner = self.inner.exclusive_access();
-        let current = inner.current_task;
-        inner.tasks[current].user_time += inner.update_checkpoint();
-    }
+    
 
 
 
@@ -215,13 +210,6 @@ pub fn exit_current_and_run_next() {
     run_next_task();
 }
 
-pub fn user_time_start() {
-    TASK_MANAGER.user_time_start();
-}
-
-pub fn user_time_end() {
-    TASK_MANAGER.user_time_end();
-}
 
 pub fn get_current_task_block() -> TaskControlBlock {
     let inner = TASK_MANAGER.inner.exclusive_access();

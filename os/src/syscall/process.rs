@@ -1,7 +1,7 @@
 //! Process management syscalls
 use crate::{
     config::MAX_SYSCALL_NUM,
-    task::{exit_current_and_run_next, get_current_task_block, suspend_current_and_run_next, TaskStatus},
+    task::{exit_current_and_run_next, get_current_task_block, get_time_ms, suspend_current_and_run_next, TaskStatus},
     timer::get_time_us,
 };
 
@@ -63,7 +63,7 @@ pub fn sys_task_info(_ti: *mut TaskInfo) -> isize {
         *_ti = TaskInfo {
             status: task_block.task_status,
             syscall_times: task_block.syscall_times,
-            time: task_block.kernel_time + task_block.user_time,
+            time: get_time_ms() - task_block.start_time,
         };
         //println!("time:{}", task_block.kernel_time + task_block.user_time);
     }
